@@ -36,22 +36,36 @@
  * VOLTAGE MONITORING USAGE:
  * ========================
  * 
- * Basic voltage-to-percentage conversion:
+ * Accurate voltage-to-percentage conversion using lookup tables:
  * ```cpp
  * uint16_t voltage_mv = 3850;  // 3.85V measured
  * uint8_t percent = voltageToBatteryPercent(voltage_mv);
- * Serial.println(percent);  // Output: 42%
+ * Serial.println(percent);  // Output: ~42% (interpolated from lookup table)
  * 
- * // Float version
+ * // Float version (automatically converted to mV internally)
  * float voltage = 3.85;
  * uint8_t percent = voltageToBatteryPercentFloat(voltage);
+ * 
+ * // Reverse conversion: percent to voltage
+ * uint8_t batteryLevel = 75;
+ * uint16_t expected_mv = batteryPercentToVoltage(batteryLevel);
+ * float expected_v = batteryPercentToVoltageFloat(batteryLevel);
  * ```
+ * 
+ * The lookup tables provide non-linear conversion based on real LiPo characteristics:
+ * - Linear interpolation between table values for precise measurements
+ * - Automatic rounding to nearest 0.5% (0.5+ rounds up)
+ * - Handles all voltage values between 3.6V-4.2V accurately
  * 
  * Safety checks:
  * ```cpp
  * bool safe = isBatteryVoltageSafe(voltage_mv);
  * if (!safe) {
- *   Serial.println("WARNING: Unsafe voltage!");
+ *   if (voltage_mv < LIPO_CRITICAL_MV) {
+ *     Serial.println("CRITICAL: Voltage too low!");
+ *   } else if (voltage_mv > LIPO_OVERCHARGE_MV) {
+ *     Serial.println("WARNING: Overcharge detected!");
+ *   }
  * }
  * ```
  * 
@@ -129,6 +143,7 @@
  * AdvancedPowerIntegrator flightBattery(24.4);  // Your battery capacity
  * 
  * void setup() {
+ *   Serial.begin(115200);
  *   // Initialize your current/voltage sensors
  * }
  * 
@@ -137,24 +152,39 @@
  *   float voltage = analogRead(VOLTAGE_PIN) * VOLTAGE_SCALE;
  *   float current = analogRead(CURRENT_PIN) * CURRENT_SCALE;
  *   
- *   // Update power consumption
+ *   // Update power consumption (works under load!)
  *   flightBattery.addMeasurement(voltage, current, millis());
  *   
  *   // Check flight safety every second
  *   static unsigned long lastCheck = 0;
  *   if (millis() - lastCheck > 1000) {
- *     uint8_t remaining = flightBattery.getRemainingCapacityPercent();
+ *     // CRITICAL: Use power integration for flight decisions!
+ *     uint8_t capacityPercent = flightBattery.getRemainingCapacityPercent();
  *     double timeLeft = flightBattery.estimateRemainingTime_minutes();
  *     
- *     Serial.print("Battery: ");
- *     Serial.print(remaining);
+ *     // Voltage percentage only reliable when unloaded (motors off)
+ *     // uint8_t voltagePercent = voltageToBatteryPercentFloat(voltage); // ⚠️  UNRELIABLE UNDER LOAD!
+ *     
+ *     Serial.print("Remaining capacity: ");
+ *     Serial.print(capacityPercent);
  *     Serial.print("% | Flight time: ");
  *     Serial.print(timeLeft, 1);
- *     Serial.println(" min");
+ *     Serial.print(" min | Voltage: ");
+ *     Serial.print(voltage, 2);
+ *     Serial.println("V (loaded)");
  *     
- *     // Safety logic
+ *     // Safety logic: Use power integration for flight decisions
  *     if (flightBattery.isBatteryLow(20)) {
+ *       Serial.println("WARNING: Battery capacity low - return to home!");
  *       triggerReturnToHome();
+ *     }
+ *     
+ *     // Optional: Check voltage only when landed/unloaded
+ *     if (isLanded() && current < 0.1) { // Motors off, minimal current
+ *       uint8_t unloadedPercent = voltageToBatteryPercentFloat(voltage);
+ *       Serial.print("Unloaded voltage percentage: ");
+ *       Serial.print(unloadedPercent);
+ *       Serial.println("%");
  *     }
  *     
  *     lastCheck = millis();
@@ -179,18 +209,50 @@
  * VOLTAGE RANGE AND SAFETY:
  * =========================
  * 
- * - 4.2V per cell = 100% (fully charged)
- * - 3.6V per cell = 0% (safe minimum for storage/measurement)
- * - 3.3V per cell = Critical (chemical destabilization threshold)
- * - Always measure unloaded voltage for accurate percentage
+ * LiPo voltage characteristics (per cell):
+ * - 4.2V = 100% (fully charged, end of charge cycle)
+ * - 3.6V = 0% (safe minimum for storage/measurement)  
+ * - 3.3V = Critical threshold (chemical destabilization begins)
+ * 
+ * ⚠️  IMPORTANT: UNLOADED VOLTAGE MEASUREMENTS ONLY!
+ * ==================================================
+ * 
+ * The lookup table percentage calculations are ONLY accurate for unloaded cells:
+ * - Measure voltage when NO current is flowing (motors off, load disconnected)
+ * - Under load, voltage drops due to internal resistance (ESR)
+ * - High discharge currents cause significant voltage sag
+ * - Battery age and chemistry variations affect the discharge curve
+ * - Different motor/ESC configurations create different load profiles
+ * 
+ * For LOADED measurements (during flight):
+ * - Use power integration (Wh consumed vs. total Wh capacity) instead
+ * - Voltage-based percentage becomes unreliable under load
+ * - Combine both methods: unloaded voltage + power integration
+ * 
+ * Lookup table benefits (unloaded only):
+ * - Non-linear conversion matches real LiPo discharge curve
+ * - Interpolation between table values for precise results
+ * - Example: 3.693V (unloaded) → interpolated → ~15%
+ * - Automatic 0.5% rounding (values ≥0.5 round up to next percent)
+ * 
+ * Multi-cell batteries:
+ * - 2S: Divide total voltage by 2, then use lookup functions
+ * - 3S: Divide total voltage by 3, then use lookup functions  
+ * - 4S: Divide total voltage by 4, then use lookup functions
  * 
  * NOTES:
  * ======
- * - Library supports variable sample rates (timestamp-based integration)
- * - Power integration uses trapezoidal rule for accuracy
+ * - ⚠️  CRITICAL: Lookup tables only accurate for UNLOADED voltage measurements
+ * - Under load (motors running), internal resistance causes voltage sag → inaccurate %
+ * - Battery age, temperature, and chemistry variations affect discharge curves
+ * - For flight applications: Use power integration (Wh) for reliable capacity tracking
+ * - Voltage-based % only useful when motors are off (landing, pre-flight checks)
+ * - Power integration uses trapezoidal rule for accuracy with variable sample rates
  * - All functions are optimized for real-time drone applications
  * - Battery capacity should be specified in Watt-Hours (Wh)
  * - Current should be positive for discharge, negative for charge
+ * - Combine both methods: Power integration during flight + voltage check when landed
+ * - Multi-cell batteries: divide total voltage by cell count before using functions
  */
 
 // LiPo Battery Voltage to Percentage Lookup Table
@@ -236,27 +298,47 @@ const float LIPO_VOLTAGE_TABLE_FLOAT[100] = {
 #define LIPO_CRITICAL_VOLTAGE  3.3   // Chemical destabilization threshold
 #define LIPO_OVERCHARGE_VOLTAGE 4.25 // Overcharge protection
 
-// Utility functions
+// Utility functions using lookup tables for accurate non-linear conversion
 inline uint8_t voltageToBatteryPercent(uint16_t voltage_mv) {
   if (voltage_mv <= LIPO_MIN_VOLTAGE_MV) return 0;
   if (voltage_mv >= LIPO_MAX_VOLTAGE_MV) return 100;
-  return ((voltage_mv - LIPO_MIN_VOLTAGE_MV) * 100) / (LIPO_MAX_VOLTAGE_MV - LIPO_MIN_VOLTAGE_MV);
+  
+  // Find the two table entries that bracket our voltage
+  for (uint8_t i = 0; i < 99; i++) {
+    if (voltage_mv >= LIPO_VOLTAGE_TABLE[i] && voltage_mv <= LIPO_VOLTAGE_TABLE[i + 1]) {
+      // Interpolate between i% and (i+1)%
+      uint16_t lower_mv = LIPO_VOLTAGE_TABLE[i];
+      uint16_t upper_mv = LIPO_VOLTAGE_TABLE[i + 1];
+      
+      // Calculate fractional position (0.0 = lower, 1.0 = upper)
+      float fraction = (float)(voltage_mv - lower_mv) / (float)(upper_mv - lower_mv);
+      
+      // Round to nearest 0.5% (0.5 rounds up to next %)
+      return i + (uint8_t)(fraction + 0.5f);
+    }
+  }
+  
+  // Handle edge case: exactly at 99% table entry
+  if (voltage_mv == LIPO_VOLTAGE_TABLE[99]) return 99;
+  
+  return 99; // Should not reach here, but safety fallback
 }
 
 inline uint8_t voltageToBatteryPercentFloat(float voltage) {
-  if (voltage <= LIPO_MIN_VOLTAGE) return 0;
-  if (voltage >= LIPO_MAX_VOLTAGE) return 100;
-  return (uint8_t)((voltage - LIPO_MIN_VOLTAGE) * 100.0 / (LIPO_MAX_VOLTAGE - LIPO_MIN_VOLTAGE));
+  uint16_t voltage_mv = (uint16_t)(voltage * 1000.0 + 0.5); // Round to nearest mV
+  return voltageToBatteryPercent(voltage_mv);
 }
 
 inline uint16_t batteryPercentToVoltage(uint8_t percent) {
   if (percent >= 100) return LIPO_MAX_VOLTAGE_MV;
-  return LIPO_MIN_VOLTAGE_MV + (percent * (LIPO_MAX_VOLTAGE_MV - LIPO_MIN_VOLTAGE_MV)) / 100;
+  if (percent == 0) return LIPO_MIN_VOLTAGE_MV;
+  return LIPO_VOLTAGE_TABLE[percent - 1];  // Table is 0-indexed for 0-99%
 }
 
 inline float batteryPercentToVoltageFloat(uint8_t percent) {
   if (percent >= 100) return LIPO_MAX_VOLTAGE;
-  return LIPO_MIN_VOLTAGE + (percent * (LIPO_MAX_VOLTAGE - LIPO_MIN_VOLTAGE)) / 100.0;
+  if (percent == 0) return LIPO_MIN_VOLTAGE;
+  return LIPO_VOLTAGE_TABLE_FLOAT[percent - 1];  // Table is 0-indexed for 0-99%
 }
 
 inline bool isBatteryVoltageSafe(uint16_t voltage_mv) {
@@ -456,4 +538,3 @@ inline uint8_t estimateRemainingCapacity(double consumedWh, double totalCapacity
 }
 
 #endif // LIPO_BATTERY_H
-
