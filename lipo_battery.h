@@ -311,30 +311,36 @@
 // WARNING: Values below 30% (3.6V) can damage cells if discharged further!
 
 const uint16_t LIPO_VOLTAGE_TABLE[100] = {
-  3200, 3210, 3220, 3230, 3240, 3250, 3260, 3270, 3280, 3290, // 0-9%   - Critical/dangerous
-  3300, 3310, 3320, 3330, 3340, 3350, 3360, 3370, 3380, 3390, // 10-19% - Very low/risky  
-  3400, 3410, 3420, 3430, 3440, 3450, 3460, 3470, 3480, 3490, // 20-29% - Low/unsafe
-  3500, 3510, 3520, 3530, 3540, 3550, 3560, 3570, 3580, 3590, // 30-39% - Safe minimum zone
-  3600, 3610, 3620, 3630, 3640, 3650, 3660, 3670, 3680, 3690, // 40-49% - Safe operation
-  3700, 3710, 3720, 3725, 3730, 3735, 3740, 3745, 3750, 3755, // 50-59% - Normal range
-  3760, 3765, 3770, 3775, 3780, 3785, 3790, 3795, 3800, 3805, // 60-69% - Good capacity
-  3810, 3815, 3820, 3825, 3830, 3835, 3840, 3845, 3850, 3860, // 70-79% - High capacity
-  3870, 3880, 3890, 3900, 3910, 3920, 3930, 3940, 3950, 3980, // 80-89% - Very high
-  4000, 4020, 4040, 4060, 4080, 4100, 4120, 4140, 4160, 4200  // 90-99% - Full charge
+  // Exponentieller Bereich: 3.2V-3.4V (0%-8%) - Steiler Abfall am Ende
+  3200, 3203, 3206, 3209, 3212, 3215, 3218, 3221, 3224, 3227, // 0-9%   - Critical/dangerous
+  3230, 3235, 3240, 3245, 3250, 3255, 3260, 3265, 3270, 3275, // 10-19% - Very low/risky  
+  3280, 3285, 3290, 3295, 3300, 3310, 3320, 3330, 3340, 3350, // 20-29% - Low/unsafe (3.3V=3%→20%, 3.4V=8%→29%)
+  // Linearer Bereich: 3.5V-3.8V (20%-75%) - Flacher Mittelteil
+  3360, 3370, 3380, 3390, 3400, 3410, 3420, 3430, 3440, 3450, // 30-39% - Safe minimum zone (3.5V=20%→30%)
+  3460, 3470, 3480, 3490, 3500, 3510, 3520, 3530, 3540, 3550, // 40-49% - Safe operation 
+  3560, 3570, 3580, 3590, 3600, 3610, 3620, 3630, 3640, 3650, // 50-59% - Normal range (3.6V=30%→55%)
+  3660, 3670, 3680, 3690, 3700, 3710, 3720, 3730, 3740, 3750, // 60-69% - Good capacity (3.7V=55%→69%)
+  3760, 3770, 3780, 3790, 3800, 3810, 3820, 3830, 3840, 3850, // 70-79% - High capacity (3.8V=75%→79%)
+  // Plateau-Bereich: 3.9V-4.2V (90%-100%) - Flach oben, wenig Kapazität
+  3860, 3870, 3880, 3890, 3900, 3920, 3940, 3960, 3980, 4000, // 80-89% - Very high (3.9V=90%→84%)
+  4020, 4040, 4060, 4080, 4100, 4120, 4140, 4160, 4180, 4200  // 90-99% - Full charge (4.0V=95%→90%, 4.1V=98%→95%, 4.2V=100%→99%)
 };
 
 // Alternative float array (voltage in volts) - TECHNICAL/REALISTIC LiPo discharge curve
 const float LIPO_VOLTAGE_TABLE_FLOAT[100] = {
-  3.200, 3.210, 3.220, 3.230, 3.240, 3.250, 3.260, 3.270, 3.280, 3.290, // 0-9%   - Critical/dangerous
-  3.300, 3.310, 3.320, 3.330, 3.340, 3.350, 3.360, 3.370, 3.380, 3.390, // 10-19% - Very low/risky  
-  3.400, 3.410, 3.420, 3.430, 3.440, 3.450, 3.460, 3.470, 3.480, 3.490, // 20-29% - Low/unsafe
-  3.500, 3.510, 3.520, 3.530, 3.540, 3.550, 3.560, 3.570, 3.580, 3.590, // 30-39% - Safe minimum zone
-  3.600, 3.610, 3.620, 3.630, 3.640, 3.650, 3.660, 3.670, 3.680, 3.690, // 40-49% - Safe operation
-  3.700, 3.710, 3.720, 3.725, 3.730, 3.735, 3.740, 3.745, 3.750, 3.755, // 50-59% - Normal range
-  3.760, 3.765, 3.770, 3.775, 3.780, 3.785, 3.790, 3.795, 3.800, 3.805, // 60-69% - Good capacity
-  3.810, 3.815, 3.820, 3.825, 3.830, 3.835, 3.840, 3.845, 3.850, 3.860, // 70-79% - High capacity
-  3.870, 3.880, 3.890, 3.900, 3.910, 3.920, 3.930, 3.940, 3.950, 3.980, // 80-89% - Very high
-  4.000, 4.020, 4.040, 4.060, 4.080, 4.100, 4.120, 4.140, 4.160, 4.200  // 90-99% - Full charge
+  // Exponentieller Bereich: 3.2V-3.4V (0%-8%) - Steiler Abfall am Ende
+  3.200, 3.203, 3.206, 3.209, 3.212, 3.215, 3.218, 3.221, 3.224, 3.227, // 0-9%   - Critical/dangerous
+  3.230, 3.235, 3.240, 3.245, 3.250, 3.255, 3.260, 3.265, 3.270, 3.275, // 10-19% - Very low/risky  
+  3.280, 3.285, 3.290, 3.295, 3.300, 3.310, 3.320, 3.330, 3.340, 3.350, // 20-29% - Low/unsafe (3.3V=3%→20%, 3.4V=8%→29%)
+  // Linearer Bereich: 3.5V-3.8V (20%-75%) - Flacher Mittelteil
+  3.360, 3.370, 3.380, 3.390, 3.400, 3.410, 3.420, 3.430, 3.440, 3.450, // 30-39% - Safe minimum zone (3.5V=20%→30%)
+  3.460, 3.470, 3.480, 3.490, 3.500, 3.510, 3.520, 3.530, 3.540, 3.550, // 40-49% - Safe operation 
+  3.560, 3.570, 3.580, 3.590, 3.600, 3.610, 3.620, 3.630, 3.640, 3.650, // 50-59% - Normal range (3.6V=30%→55%)
+  3.660, 3.670, 3.680, 3.690, 3.700, 3.710, 3.720, 3.730, 3.740, 3.750, // 60-69% - Good capacity (3.7V=55%→69%)
+  3.760, 3.770, 3.780, 3.790, 3.800, 3.810, 3.820, 3.830, 3.840, 3.850, // 70-79% - High capacity (3.8V=75%→79%)
+  // Plateau-Bereich: 3.9V-4.2V (90%-100%) - Flach oben, wenig Kapazität
+  3.860, 3.870, 3.880, 3.890, 3.900, 3.920, 3.940, 3.960, 3.980, 4.000, // 80-89% - Very high (3.9V=90%→84%)
+  4.020, 4.040, 4.060, 4.080, 4.100, 4.120, 4.140, 4.160, 4.180, 4.200  // 90-99% - Full charge (4.0V=95%→90%, 4.1V=98%→95%, 4.2V=100%→99%)
 };
 
 // Battery voltage constants
@@ -411,14 +417,14 @@ inline uint8_t voltageToBatteryPercentSafe(uint16_t voltage_mv) {
   // First get the technical percentage using the realistic curve
   uint8_t technicalPercent = voltageToBatteryPercent(voltage_mv);
   
-  // Technical range: 3.6V = 40%, 4.2V = 100% (from lookup table)
+  // Technical range: 3.6V = 55%, 4.2V = 100% (from updated lookup table)
   // Safe range:     3.6V = 0%,  4.2V = 100% (remapped for users)
   
-  if (technicalPercent <= 40) return 0;  // Below safe minimum
+  if (technicalPercent <= 55) return 0;  // Below safe minimum (3.6V)
   
-  // Remap 40%-100% technical range to 0%-100% safe range
-  // Formula: safePercent = (technicalPercent - 40) * 100 / (100 - 40)
-  return (uint8_t)((technicalPercent - 40) * 100 / 60);
+  // Remap 55%-100% technical range to 0%-100% safe range
+  // Formula: safePercent = (technicalPercent - 55) * 100 / (100 - 55)
+  return (uint8_t)((technicalPercent - 55) * 100 / 45);
 }
 
 inline uint8_t voltageToBatteryPercentSafeFloat(float voltage) {
@@ -430,9 +436,9 @@ inline uint16_t batteryPercentToVoltageSafe(uint8_t percent) {
   if (percent >= 100) return LIPO_MAX_VOLTAGE_MV;
   if (percent == 0) return LIPO_SAFE_MIN_MV;
   
-  // Reverse mapping: Safe 0%-100% to Technical 40%-100%
-  // Formula: technicalPercent = (safePercent * 60 / 100) + 40
-  uint8_t technicalPercent = (percent * 60 / 100) + 40;
+  // Reverse mapping: Safe 0%-100% to Technical 55%-100%
+  // Formula: technicalPercent = (safePercent * 45 / 100) + 55
+  uint8_t technicalPercent = (percent * 45 / 100) + 55;
   
   // Use technical lookup table for realistic voltage
   return batteryPercentToVoltage(technicalPercent);
