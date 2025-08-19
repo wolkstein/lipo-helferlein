@@ -52,6 +52,55 @@
  * float expected_v = batteryPercentToVoltageFloat(batteryLevel);
  * ```
  * 
+ * DUAL-MODE BATTERY PERCENTAGE SYSTEM:
+ * ====================================
+ * 
+ * The library provides two different percentage calculation modes:
+ * 
+ * 1. TECHNICAL/REALISTIC MODE (3.2V-4.2V full range):
+ * ```cpp
+ * float voltage = 3.5;  // 3.5V measured
+ * uint8_t techPercent = voltageToBatteryPercentFloat(voltage);
+ * Serial.println(techPercent);  // Output: ~20% (realistic LiPo curve)
+ * 
+ * // Shows actual battery state including dangerous levels
+ * // 3.2V = 0%, 3.3V = 10%, 3.6V = 40%, 4.2V = 100%
+ * ```
+ * 
+ * 2. USER-FRIENDLY/SAFE MODE (3.6V-4.2V safe range):
+ * ```cpp
+ * float voltage = 3.5;  // 3.5V measured
+ * uint8_t safePercent = voltageToBatteryPercentSafeFloat(voltage);
+ * Serial.println(safePercent);  // Output: 0% (below safe minimum)
+ * 
+ * float voltage2 = 3.6;  // Safe minimum voltage
+ * uint8_t safePercent2 = voltageToBatteryPercentSafeFloat(voltage2);
+ * Serial.println(safePercent2);  // Output: 0% (remapped safe minimum)
+ * 
+ * float voltage3 = 3.9;  // Mid-range voltage
+ * uint8_t safePercent3 = voltageToBatteryPercentSafeFloat(voltage3);
+ * Serial.println(safePercent3);  // Output: ~50% (3.6V-4.2V → 0%-100%)
+ * 
+ * // Safe mode protects users from deep discharge:
+ * // 3.6V = 0%, 3.9V = 50%, 4.2V = 100%
+ * // Voltages below 3.6V show as 0% to prevent cell damage
+ * ```
+ * 
+ * When to use each mode:
+ * - Technical mode: Advanced users, diagnostics, full battery analysis
+ * - Safe mode: General users, consumer applications, battery protection
+ * 
+ * Both modes support reverse conversion:
+ * ```cpp
+ * // Technical mode reverse conversion
+ * uint16_t voltage_mv = batteryPercentToVoltage(20);    // Returns ~3500mV (3.5V)
+ * float voltage_v = batteryPercentToVoltageFloat(20);   // Returns ~3.5V
+ * 
+ * // Safe mode reverse conversion  
+ * uint16_t safe_mv = batteryPercentToVoltageSafe(50);   // Returns 3900mV (3.9V)
+ * float safe_v = batteryPercentToVoltageSafeFloat(50);  // Returns 3.9V
+ * ```
+ * 
  * The lookup tables provide non-linear conversion based on real LiPo characteristics:
  * - Linear interpolation between table values for precise measurements
  * - Automatic rounding to nearest 0.5% (0.5+ rounds up)
@@ -255,48 +304,51 @@
  * - Multi-cell batteries: divide total voltage by cell count before using functions
  */
 
-// LiPo Battery Voltage to Percentage Lookup Table
-// Based on unloaded LiPo cell voltage (3.6V = 0%, 4.2V = 100%)
-// Protects cells from chemical destabilization below 3.3V
+// LiPo Battery Voltage to Percentage Lookup Table (TECHNICAL/REALISTIC)
+// Based on realistic unloaded LiPo cell discharge curve (3.2V = 0%, 4.2V = 100%)
+// Reflects actual LiPo characteristics including critical/dangerous ranges
 // Index represents percentage (0-99), value is voltage in millivolts
+// WARNING: Values below 30% (3.6V) can damage cells if discharged further!
 
 const uint16_t LIPO_VOLTAGE_TABLE[100] = {
-  3600, 3606, 3612, 3618, 3624, 3630, 3636, 3642, 3648, 3654, // 0-9%
-  3660, 3666, 3672, 3678, 3684, 3690, 3696, 3702, 3708, 3714, // 10-19%
-  3720, 3726, 3732, 3738, 3744, 3750, 3756, 3762, 3768, 3774, // 20-29%
-  3780, 3786, 3792, 3798, 3804, 3810, 3816, 3822, 3828, 3834, // 30-39%
-  3840, 3846, 3852, 3858, 3864, 3870, 3876, 3882, 3888, 3894, // 40-49%
-  3900, 3906, 3912, 3918, 3924, 3930, 3936, 3942, 3948, 3954, // 50-59%
-  3960, 3966, 3972, 3978, 3984, 3990, 3996, 4002, 4008, 4014, // 60-69%
-  4020, 4026, 4032, 4038, 4044, 4050, 4056, 4062, 4068, 4074, // 70-79%
-  4080, 4086, 4092, 4098, 4104, 4110, 4116, 4122, 4128, 4134, // 80-89%
-  4140, 4146, 4152, 4158, 4164, 4170, 4176, 4182, 4188, 4200  // 90-99%
+  3200, 3210, 3220, 3230, 3240, 3250, 3260, 3270, 3280, 3290, // 0-9%   - Critical/dangerous
+  3300, 3310, 3320, 3330, 3340, 3350, 3360, 3370, 3380, 3390, // 10-19% - Very low/risky  
+  3400, 3410, 3420, 3430, 3440, 3450, 3460, 3470, 3480, 3490, // 20-29% - Low/unsafe
+  3500, 3510, 3520, 3530, 3540, 3550, 3560, 3570, 3580, 3590, // 30-39% - Safe minimum zone
+  3600, 3610, 3620, 3630, 3640, 3650, 3660, 3670, 3680, 3690, // 40-49% - Safe operation
+  3700, 3710, 3720, 3725, 3730, 3735, 3740, 3745, 3750, 3755, // 50-59% - Normal range
+  3760, 3765, 3770, 3775, 3780, 3785, 3790, 3795, 3800, 3805, // 60-69% - Good capacity
+  3810, 3815, 3820, 3825, 3830, 3835, 3840, 3845, 3850, 3860, // 70-79% - High capacity
+  3870, 3880, 3890, 3900, 3910, 3920, 3930, 3940, 3950, 3980, // 80-89% - Very high
+  4000, 4020, 4040, 4060, 4080, 4100, 4120, 4140, 4160, 4200  // 90-99% - Full charge
 };
 
-// Alternative float array (voltage in volts)
+// Alternative float array (voltage in volts) - TECHNICAL/REALISTIC LiPo discharge curve
 const float LIPO_VOLTAGE_TABLE_FLOAT[100] = {
-  3.600, 3.606, 3.612, 3.618, 3.624, 3.630, 3.636, 3.642, 3.648, 3.654, // 0-9%
-  3.660, 3.666, 3.672, 3.678, 3.684, 3.690, 3.696, 3.702, 3.708, 3.714, // 10-19%
-  3.720, 3.726, 3.732, 3.738, 3.744, 3.750, 3.756, 3.762, 3.768, 3.774, // 20-29%
-  3.780, 3.786, 3.792, 3.798, 3.804, 3.810, 3.816, 3.822, 3.828, 3.834, // 30-39%
-  3.840, 3.846, 3.852, 3.858, 3.864, 3.870, 3.876, 3.882, 3.888, 3.894, // 40-49%
-  3.900, 3.906, 3.912, 3.918, 3.924, 3.930, 3.936, 3.942, 3.948, 3.954, // 50-59%
-  3.960, 3.966, 3.972, 3.978, 3.984, 3.990, 3.996, 4.002, 4.008, 4.014, // 60-69%
-  4.020, 4.026, 4.032, 4.038, 4.044, 4.050, 4.056, 4.062, 4.068, 4.074, // 70-79%
-  4.080, 4.086, 4.092, 4.098, 4.104, 4.110, 4.116, 4.122, 4.128, 4.134, // 80-89%
-  4.140, 4.146, 4.152, 4.158, 4.164, 4.170, 4.176, 4.182, 4.188, 4.200  // 90-99%
+  3.200, 3.210, 3.220, 3.230, 3.240, 3.250, 3.260, 3.270, 3.280, 3.290, // 0-9%   - Critical/dangerous
+  3.300, 3.310, 3.320, 3.330, 3.340, 3.350, 3.360, 3.370, 3.380, 3.390, // 10-19% - Very low/risky  
+  3.400, 3.410, 3.420, 3.430, 3.440, 3.450, 3.460, 3.470, 3.480, 3.490, // 20-29% - Low/unsafe
+  3.500, 3.510, 3.520, 3.530, 3.540, 3.550, 3.560, 3.570, 3.580, 3.590, // 30-39% - Safe minimum zone
+  3.600, 3.610, 3.620, 3.630, 3.640, 3.650, 3.660, 3.670, 3.680, 3.690, // 40-49% - Safe operation
+  3.700, 3.710, 3.720, 3.725, 3.730, 3.735, 3.740, 3.745, 3.750, 3.755, // 50-59% - Normal range
+  3.760, 3.765, 3.770, 3.775, 3.780, 3.785, 3.790, 3.795, 3.800, 3.805, // 60-69% - Good capacity
+  3.810, 3.815, 3.820, 3.825, 3.830, 3.835, 3.840, 3.845, 3.850, 3.860, // 70-79% - High capacity
+  3.870, 3.880, 3.890, 3.900, 3.910, 3.920, 3.930, 3.940, 3.950, 3.980, // 80-89% - Very high
+  4.000, 4.020, 4.040, 4.060, 4.080, 4.100, 4.120, 4.140, 4.160, 4.200  // 90-99% - Full charge
 };
 
 // Battery voltage constants
-#define LIPO_MIN_VOLTAGE_MV    3600  // 0% charge (safe minimum)
+#define LIPO_MIN_VOLTAGE_MV    3200  // 0% charge (technical minimum - cell death)
 #define LIPO_MAX_VOLTAGE_MV    4200  // 100% charge (full)
 #define LIPO_CRITICAL_MV       3300  // Chemical destabilization threshold
 #define LIPO_OVERCHARGE_MV     4250  // Overcharge protection
+#define LIPO_SAFE_MIN_MV       3600  // 40% charge (safe minimum for users)
 
-#define LIPO_MIN_VOLTAGE       3.6   // 0% charge (safe minimum)
+#define LIPO_MIN_VOLTAGE       3.2   // 0% charge (technical minimum - cell death)
 #define LIPO_MAX_VOLTAGE       4.2   // 100% charge (full)
 #define LIPO_CRITICAL_VOLTAGE  3.3   // Chemical destabilization threshold
 #define LIPO_OVERCHARGE_VOLTAGE 4.25 // Overcharge protection
+#define LIPO_SAFE_MIN_VOLTAGE  3.6   // 40% charge (safe minimum for users)
 
 // Utility functions using lookup tables for accurate non-linear conversion
 inline uint8_t voltageToBatteryPercent(uint16_t voltage_mv) {
@@ -347,6 +399,37 @@ inline bool isBatteryVoltageSafe(uint16_t voltage_mv) {
 
 inline bool isBatteryVoltageSafeFloat(float voltage) {
   return (voltage >= LIPO_CRITICAL_VOLTAGE && voltage <= LIPO_OVERCHARGE_VOLTAGE);
+}
+
+// USER-FRIENDLY functions - Safe range mapping (3.6V = 0%, 4.2V = 100%)
+// These functions protect users from deep discharge by remapping the safe range
+inline uint8_t voltageToBatteryPercentSafe(uint16_t voltage_mv) {
+  if (voltage_mv <= LIPO_SAFE_MIN_MV) return 0;
+  if (voltage_mv >= LIPO_MAX_VOLTAGE_MV) return 100;
+  
+  // Map safe range (3.6V-4.2V) to (0%-100%)
+  uint16_t safe_range = LIPO_MAX_VOLTAGE_MV - LIPO_SAFE_MIN_MV; // 600mV range
+  uint16_t voltage_offset = voltage_mv - LIPO_SAFE_MIN_MV;
+  
+  return (uint8_t)((voltage_offset * 100) / safe_range);
+}
+
+inline uint8_t voltageToBatteryPercentSafeFloat(float voltage) {
+  uint16_t voltage_mv = (uint16_t)(voltage * 1000.0 + 0.5);
+  return voltageToBatteryPercentSafe(voltage_mv);
+}
+
+inline uint16_t batteryPercentToVoltageSafe(uint8_t percent) {
+  if (percent >= 100) return LIPO_MAX_VOLTAGE_MV;
+  if (percent == 0) return LIPO_SAFE_MIN_MV;
+  
+  // Map (0%-100%) to safe range (3.6V-4.2V)  
+  uint16_t safe_range = LIPO_MAX_VOLTAGE_MV - LIPO_SAFE_MIN_MV;
+  return LIPO_SAFE_MIN_MV + (percent * safe_range) / 100;
+}
+
+inline float batteryPercentToVoltageSafeFloat(uint8_t percent) {
+  return batteryPercentToVoltageSafe(percent) / 1000.0;
 }
 
 // Power Integration Class for Watt-Hours Calculation
