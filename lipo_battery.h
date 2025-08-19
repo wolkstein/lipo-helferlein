@@ -401,17 +401,24 @@ inline bool isBatteryVoltageSafeFloat(float voltage) {
   return (voltage >= LIPO_CRITICAL_VOLTAGE && voltage <= LIPO_OVERCHARGE_VOLTAGE);
 }
 
-// USER-FRIENDLY functions - Safe range mapping (3.6V = 0%, 4.2V = 100%)
-// These functions protect users from deep discharge by remapping the safe range
+// USER-FRIENDLY functions - Safe range mapping using realistic LiPo curve
+// Uses the same lookup table but remaps percentages: 3.6V = 0%, 4.2V = 100%
+// This provides realistic discharge curve characteristics with user protection
 inline uint8_t voltageToBatteryPercentSafe(uint16_t voltage_mv) {
   if (voltage_mv <= LIPO_SAFE_MIN_MV) return 0;
   if (voltage_mv >= LIPO_MAX_VOLTAGE_MV) return 100;
   
-  // Map safe range (3.6V-4.2V) to (0%-100%)
-  uint16_t safe_range = LIPO_MAX_VOLTAGE_MV - LIPO_SAFE_MIN_MV; // 600mV range
-  uint16_t voltage_offset = voltage_mv - LIPO_SAFE_MIN_MV;
+  // First get the technical percentage using the realistic curve
+  uint8_t technicalPercent = voltageToBatteryPercent(voltage_mv);
   
-  return (uint8_t)((voltage_offset * 100) / safe_range);
+  // Technical range: 3.6V = 40%, 4.2V = 100% (from lookup table)
+  // Safe range:     3.6V = 0%,  4.2V = 100% (remapped for users)
+  
+  if (technicalPercent <= 40) return 0;  // Below safe minimum
+  
+  // Remap 40%-100% technical range to 0%-100% safe range
+  // Formula: safePercent = (technicalPercent - 40) * 100 / (100 - 40)
+  return (uint8_t)((technicalPercent - 40) * 100 / 60);
 }
 
 inline uint8_t voltageToBatteryPercentSafeFloat(float voltage) {
@@ -423,9 +430,12 @@ inline uint16_t batteryPercentToVoltageSafe(uint8_t percent) {
   if (percent >= 100) return LIPO_MAX_VOLTAGE_MV;
   if (percent == 0) return LIPO_SAFE_MIN_MV;
   
-  // Map (0%-100%) to safe range (3.6V-4.2V)  
-  uint16_t safe_range = LIPO_MAX_VOLTAGE_MV - LIPO_SAFE_MIN_MV;
-  return LIPO_SAFE_MIN_MV + (percent * safe_range) / 100;
+  // Reverse mapping: Safe 0%-100% to Technical 40%-100%
+  // Formula: technicalPercent = (safePercent * 60 / 100) + 40
+  uint8_t technicalPercent = (percent * 60 / 100) + 40;
+  
+  // Use technical lookup table for realistic voltage
+  return batteryPercentToVoltage(technicalPercent);
 }
 
 inline float batteryPercentToVoltageSafeFloat(uint8_t percent) {
